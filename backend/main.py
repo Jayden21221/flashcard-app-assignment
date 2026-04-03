@@ -33,6 +33,13 @@ async def create_card(card: Flashcard):
     new_card = await collection.insert_one(card.dict())
     return {"id": str(new_card.inserted_id), **card.dict()}
 
+@app.put("/cards/{card_id}")
+async def update_card(card_id: str, card: Flashcard):
+    result = await collection.update_one({"_id": ObjectId(card_id)}, {"$set": card.dict()})
+    if result.modified_count == 1:
+        return {"message": "Success"}
+    raise HTTPException(status_code=404, detail="Not found")
+
 @app.delete("/cards/{card_id}")
 async def delete_card(card_id: str):
     result = await collection.delete_one({"_id": ObjectId(card_id)})
