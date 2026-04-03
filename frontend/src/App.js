@@ -5,6 +5,9 @@ function App() {
   const [cards, setCards] = useState([]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  const [editingCard, setEditingCard] = useState(null);
+  const [editedQuestion, setEditedQuestion] = useState('');
+  const [editedAnswer, setEditedAnswer] = useState('');
 
   const API_URL = 'http://127.0.0.1:8000/cards';
 
@@ -33,6 +36,22 @@ function App() {
       fetchCards();
     } catch (err) {
       alert("Failed to add card. Check if Backend is running.");
+    }
+  };
+
+  const startEditing = (card) => {
+    setEditingCard(card);
+    setEditedQuestion(card.question);
+    setEditedAnswer(card.answer);
+  };
+
+  const saveEdit = async (id) => {
+    try {
+      await axios.put(`${API_URL}/${id}`, { question: editedQuestion, answer: editedAnswer });
+      setEditingCard(null);
+      fetchCards();
+    } catch (err) {
+      alert("Failed to update card. Check if Backend is running.");
     }
   };
 
@@ -85,23 +104,37 @@ function App() {
               position: 'relative'
             }}
           >
-            <button 
-              onClick={(e) => deleteCard(card.id, e)} 
-              style={{ 
-                position: 'absolute', top: '5px', right: '5px', 
-                background: '#ff4d4d', color: 'white', border: 'none', 
-                borderRadius: '50%', cursor: 'pointer', width: '25px', height: '25px',
-              }}
-            >
-              X
-              </button>
-            <p><strong>{card.question}</strong></p>
-            <small style={{ color: '#888' }}>Click for Answer</small>
+            {editingCard && editingCard.id === card.id ? (
+              <div>
+                <input value={editedQuestion} onChange={(e) => setEditedQuestion(e.target.value)} style={{ width: '90%', marginBottom: '5px' }} />
+                <input value={editedAnswer} onChange={(e) => setEditedAnswer(e.target.value)} style={{ width: '90%' }} />
+                <button onClick={() => saveEdit(card.id)} style={{ padding: '5px'}}>Save</button>
+                <button onClick={() => setEditingCard(null)} style={{ padding: '5px' }}>Cancel</button>
+              </div>
+            ) : (
+              <div onClick={() => alert('Answer: ' + card.answer)}>
+                <button 
+                  onClick={(e) => deleteCard(card.id, e)} 
+                  style={{ 
+                    position: 'absolute', top: '5px', right: '5px', 
+                    background: '#ff4d4d', color: 'white', border: 'none', 
+                    borderRadius: '50%', cursor: 'pointer', width: '25px', height: '25px',
+                  }}
+                >
+                  X
+                  </button>
+                <p><strong>{card.question}</strong></p>
+                <small style={{ color: '#888' }}>Click for Answer</small>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); startEditing(card); }}
+                  style={{ marginTop: '10px', display: 'block', width: '100%' }}>Edit</button>
+              </div>
+            )}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
+          </div>
+        </div>
+      );
+    }
 
 export default App;
