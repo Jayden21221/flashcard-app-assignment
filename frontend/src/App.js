@@ -98,7 +98,18 @@ function App() {
 
   const addCard = async (e) => {
     e.preventDefault();
-    await axios.post(API_URL, { question, answer });
+    const trimmedQuestion = question.trim();
+    const trimmedAnswer = answer.trim();
+    if (!trimmedQuestion || !trimmedAnswer) {
+      setQuestion(trimmedQuestion);
+      setAnswer(trimmedAnswer);
+      if (typeof window !== 'undefined') {
+        window.alert('Please provide both a question and answer.');
+      }
+      return;
+    }
+
+    await axios.post(API_URL, { question: trimmedQuestion, answer: trimmedAnswer });
     setQuestion('');
     setAnswer('');
     fetchCards();
@@ -117,7 +128,18 @@ function App() {
   };
 
   const saveEdit = async (id) => {
-    await axios.put(`${API_URL}/${id}`, { question: editQ, answer: editA });
+    const trimmedQuestion = editQ.trim();
+    const trimmedAnswer = editA.trim();
+    if (!trimmedQuestion || !trimmedAnswer) {
+      setEditQ(trimmedQuestion);
+      setEditA(trimmedAnswer);
+      if (typeof window !== 'undefined') {
+        window.alert('Please provide both a question and answer.');
+      }
+      return;
+    }
+
+    await axios.put(`${API_URL}/${id}`, { question: trimmedQuestion, answer: trimmedAnswer });
     cancelEdit();
     fetchCards();
   };
