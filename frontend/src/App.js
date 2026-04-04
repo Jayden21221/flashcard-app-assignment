@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 
 const EMPTY_DECK_MESSAGE = 'Add cards in the management zone to start studying.';
 const COMPLETION_MESSAGE = "Great job! You've finished all cards.";
+const CARD_BASE_WIDTH = 320;
+const CARD_BASE_HEIGHT = 220;
+const CARD_ASPECT_RATIO = CARD_BASE_HEIGHT / CARD_BASE_WIDTH;
 
 function App() {
   const [cards, setCards] = useState([]);
@@ -17,6 +20,8 @@ function App() {
   const [isStudyFlipped, setIsStudyFlipped] = useState(false);
   const [isStudying, setIsStudying] = useState(false);
   const [studyMessage, setStudyMessage] = useState('');
+  const [cardSize, setCardSize] = useState({ width: CARD_BASE_WIDTH, height: CARD_BASE_HEIGHT });
+  const studyCardWrapperRef = useRef(null);
 
   const API_URL = 'http://127.0.0.1:8000/cards';
 
@@ -31,6 +36,35 @@ function App() {
 
   useEffect(() => {
     fetchCards();
+  }, []);
+
+  useEffect(() => {
+    const target = studyCardWrapperRef.current;
+    if (!target) {
+      return undefined;
+    }
+
+    const updateCardSize = () => {
+      const { width: measuredWidth } = target.getBoundingClientRect();
+      const safeWidth = Math.max(180, Math.round(measuredWidth || CARD_BASE_WIDTH));
+      const safeHeight = Math.round(safeWidth * CARD_ASPECT_RATIO);
+      setCardSize({ width: safeWidth, height: safeHeight });
+    };
+
+    updateCardSize();
+
+    if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
+      const observer = new window.ResizeObserver(() => updateCardSize());
+      observer.observe(target);
+      return () => observer.disconnect();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updateCardSize);
+      return () => window.removeEventListener('resize', updateCardSize);
+    }
+
+    return undefined;
   }, []);
 
   useEffect(() => {
@@ -133,7 +167,7 @@ function App() {
   const goNext = () => {
     if (!studyDeck.length) return;
     if (currentIndex === studyDeck.length - 1) {
-      setStudyMessage(COMPLETION_MESSAGE);
+      setStudyMessage('');
       if (typeof window !== 'undefined') {
         window.alert(COMPLETION_MESSAGE);
       }
@@ -251,8 +285,15 @@ function App() {
             &#8249;
           </button>
 
-          <div className="study-card-wrapper" onClick={toggleStudyFlip}>
-            <div className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}>
+          <div
+            className="study-card-wrapper"
+            onClick={toggleStudyFlip}
+            ref={studyCardWrapperRef}
+          >
+            <div
+              className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
+              style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
+            >
               <div className="study-face study-front">
                 {currentCard ? (
                   <>
