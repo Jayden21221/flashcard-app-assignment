@@ -17,7 +17,7 @@ const STUDY_STATES = {
 
 const STUDY_STATUS_COPY = {
   [STUDY_STATES.idle]: {
-    label: 'Idle',
+    label: 'Ready',
     hint: 'Shuffle the deck to begin studying.',
   },
   [STUDY_STATES.active]: {
@@ -56,6 +56,7 @@ function App() {
   const [editError, setEditError] = useState('');
   const [pendingDeletionId, setPendingDeletionId] = useState(null);
   const [studyState, setStudyState] = useState(STUDY_STATES.idle);
+  const [statusMessage, setStatusMessage] = useState('');
 
   useEffect(() => {
     if (isStudying) {
@@ -68,6 +69,10 @@ function App() {
     if (section) {
       section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+  };
+
+  const announceStatus = (message) => {
+    setStatusMessage(message);
   };
 
   const API_URL = 'http://127.0.0.1:8000/cards';
@@ -169,10 +174,17 @@ function App() {
     }
 
     setFormError('');
-    await axios.post(API_URL, { question: trimmedQuestion, answer: trimmedAnswer });
-    setQuestion('');
-    setAnswer('');
-    fetchCards();
+    try {
+      await axios.post(API_URL, { question: trimmedQuestion, answer: trimmedAnswer });
+      setQuestion('');
+      setAnswer('');
+      announceStatus('Card added successfully.', 'success');
+      fetchCards();
+    } catch (error) {
+      console.error('Failed to add card', error);
+      setFormError('Unable to add card right now.');
+      announceStatus('Unable to add card right now.', 'error');
+    }
   };
 
   const startEdit = (card) => {
@@ -200,14 +212,27 @@ function App() {
     }
 
     setEditError('');
-    await axios.put(`${API_URL}/${id}`, { question: trimmedQuestion, answer: trimmedAnswer });
-    cancelEdit();
-    fetchCards();
+    try {
+      await axios.put(`${API_URL}/${id}`, { question: trimmedQuestion, answer: trimmedAnswer });
+      cancelEdit();
+      announceStatus('Card updated successfully.', 'success');
+      fetchCards();
+    } catch (error) {
+      console.error('Failed to update card', error);
+      setEditError('Unable to save changes.');
+      announceStatus('Unable to save card changes.', 'error');
+    }
   };
 
   const disappearCard = async (id) => {
-    await axios.delete(`${API_URL}/${id}`);
-    fetchCards();
+    try {
+      await axios.delete(`${API_URL}/${id}`);
+      fetchCards();
+      announceStatus('Card deleted.', 'warning');
+    } catch (error) {
+      console.error('Failed to delete card', error);
+      announceStatus('Unable to delete card right now.', 'error');
+    }
     setPendingDeletionId(null);
   };
 
@@ -227,6 +252,7 @@ function App() {
       setStudyMessage(EMPTY_DECK_MESSAGE);
       setStudyState(STUDY_STATES.empty);
       setIsStudying(false);
+      announceStatus('Add cards in the management zone to start studying.', 'info');
       return;
     }
     const shuffled = shuffleCards(cards);
@@ -236,6 +262,7 @@ function App() {
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
+    announceStatus('Shuffle study started.', 'success');
   };
 
   const handleCardFlip = () => {
@@ -248,6 +275,13 @@ function App() {
     });
   };
 
+  const handleCardKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleCardFlip();
+    }
+  };
+
   const goPrev = () => {
     if (!canUseStudyNav) return;
     if (currentIndex === 0) return;
@@ -255,6 +289,7 @@ function App() {
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
+    announceStatus('Moved to previous card.', 'info');
   };
 
   const goNext = () => {
@@ -264,12 +299,14 @@ function App() {
       setStudyState(STUDY_STATES.complete);
       setIsStudying(false);
       setIsStudyFlipped(false);
+      announceStatus(COMPLETION_MESSAGE, 'success');
       return;
     }
     setCurrentIndex((prev) => prev + 1);
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
+    announceStatus('Moved to next card.', 'info');
   };
 
   const handlePrimaryStudyAction = () => {
@@ -302,6 +339,9 @@ function App() {
 
   return (
     <div className="App">
+      <div className="sr-only" aria-live="polite" role="status">
+        {statusMessage}
+      </div>
       <header className="app-header">
         <h1>Flashcard Control Center</h1>
         <p>Manage every card in the top panel and deep dive into shuffle study mode below.</p>
@@ -324,14 +364,18 @@ function App() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             required
+            disabled={managementLocked}
           />
           <input
             placeholder="Provide the answer"
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             required
+            disabled={managementLocked}
           />
-          <button type="submit">Add Card</button>
+          <button type="submit" disabled={managementLocked}>
+            Add Card
+          </button>
         </form>
         {formError && <p className="error-text">{formError}</p>}
 
@@ -428,21 +472,24 @@ function App() {
             type="button"
             disabled={studyLocked || !cards.length}
             title={!cards.length ? 'Add cards to begin studying.' : studyLocked ? 'Finish editing to start.' : undefined}
+            aria-label="Start shuffle study"
           >
             Start Shuffle Study
           </button>
           <span className="deck-size">Cards Ready: {studyDeck.length}</span>
         </div>
 
-        <div className="study-status-bar">
+        <div className="study-status-bar" role="status" aria-live="polite">
           <div>
             <p className="study-status-label">{statusLabel}</p>
             <p className="study-status-hint">{statusHint}</p>
           </div>
-          <span className={`study-status-pill status-${studyState}`}>{studyState}</span>
+          <span className={`study-status-pill status-${studyState}`}>{statusLabel}</span>
         </div>
         {studyLocked && (
-          <p className="info-banner warning">Finish editing to interact with the study zone.</p>
+          <p className="info-banner warning" role="alert">
+            Finish editing to interact with the study zone.
+          </p>
         )}
 
         <div className="study-area">
@@ -451,6 +498,7 @@ function App() {
             onClick={goPrev}
             type="button"
             disabled={!canUseStudyNav || isFirstCard}
+            aria-label="Previous card"
           >
             &#8249;
           </button>
@@ -458,7 +506,7 @@ function App() {
           <div className="study-content" ref={studyCardWrapperRef}>
             {studyState === STUDY_STATES.idle && (
               <div className="study-panel">
-                <h3>Shuffle Study Ready</h3>
+                <h3>Ready</h3>
                 <p>Press the shuffle button to randomize your deck and begin.</p>
               </div>
             )}
@@ -474,7 +522,19 @@ function App() {
             )}
 
             {(studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed) && (
-              <div className="study-card-wrapper" onClick={handleCardFlip}>
+              <div
+                className="study-card-wrapper"
+                onClick={handleCardFlip}
+                onKeyDown={handleCardKeyDown}
+                role="button"
+                tabIndex={studyLocked ? -1 : 0}
+                aria-pressed={isStudyFlipped}
+                aria-label={
+                  isStudyFlipped
+                    ? 'Answer is visible. Press to show the question again.'
+                    : 'Question is visible. Press to reveal the answer.'
+                }
+              >
                 <div
                   className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
                   style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
@@ -527,6 +587,7 @@ function App() {
             onClick={goNext}
             type="button"
             disabled={!canUseStudyNav}
+            aria-label="Next card"
           >
             &#8250;
           </button>
@@ -538,6 +599,7 @@ function App() {
             onClick={goPrev}
             type="button"
             disabled={!canUseStudyNav || isFirstCard}
+            aria-label="Previous card"
           >
             &#8249;
           </button>
@@ -546,6 +608,7 @@ function App() {
             onClick={goNext}
             type="button"
             disabled={!canUseStudyNav}
+            aria-label="Next card"
           >
             &#8250;
           </button>
