@@ -1,42 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
-const EMPTY_DECK_MESSAGE = 'Add cards in the management zone to start studying.';
-const COMPLETION_MESSAGE = "Great job! You've finished all cards.";
-const CARD_BASE_WIDTH = 320;
-const CARD_BASE_HEIGHT = 220;
-const CARD_ASPECT_RATIO = CARD_BASE_HEIGHT / CARD_BASE_WIDTH;
-const STUDY_STATES = {
-  idle: 'idle',
-  active: 'active',
-  revealed: 'revealed',
-  complete: 'complete',
-  empty: 'empty',
-};
-
-const STUDY_STATUS_COPY = {
-  [STUDY_STATES.idle]: {
-    label: 'Ready',
-    hint: 'Shuffle the deck to begin studying.',
-  },
-  [STUDY_STATES.active]: {
-    label: 'Studying',
-    hint: 'Review the question and reveal the answer when you are ready.',
-  },
-  [STUDY_STATES.revealed]: {
-    label: 'Answer Revealed',
-    hint: 'Advance to the next card once you feel confident.',
-  },
-  [STUDY_STATES.complete]: {
-    label: 'Study Complete',
-    hint: 'Great job! Shuffle again or adjust your deck.',
-  },
-  [STUDY_STATES.empty]: {
-    label: 'No Cards',
-    hint: 'Add cards in the management zone to get started.',
-  },
-};
+import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, CARD_ASPECT_RATIO } from './constants/layout';
+import { STUDY_STATES, STUDY_STATUS_COPY, EMPTY_DECK_MESSAGE, COMPLETION_MESSAGE } from './constants/study';
+import { fetchCards as fetchCardsApi, createCard, updateCard, deleteCard } from './services/cards';
+import CardList from './components/CardList';
+import StudyCard from './components/StudyCard';
+import { StudyStatusBar, StudyPrimaryAction } from './components/StudyControls';
+import StudyEmptyPanel from './components/StudyEmptyPanel';
+import StudyCompletePanel from './components/StudyCompletePanel';
 
 function App() {
   const [cards, setCards] = useState([]);
@@ -57,6 +29,10 @@ function App() {
   const [pendingDeletionId, setPendingDeletionId] = useState(null);
   const [studyState, setStudyState] = useState(STUDY_STATES.idle);
   const [statusMessage, setStatusMessage] = useState('');
+  const [isFetching, setIsFetching] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     if (isStudying) {
@@ -71,24 +47,26 @@ function App() {
     }
   };
 
-  const announceStatus = (message) => {
+  const announceStatus = useCallback((message) => {
     setStatusMessage(message);
-  };
+  }, []);
 
-  const API_URL = 'http://127.0.0.1:8000/cards';
-
-  const fetchCards = async () => {
+  const loadCards = useCallback(async () => {
+    setIsFetching(true);
     try {
-      const res = await axios.get(API_URL);
+      const res = await fetchCardsApi();
       setCards(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error('Failed to connect to server', err);
+      announceStatus('Unable to connect to the server.');
+    } finally {
+      setIsFetching(false);
     }
-  };
+  }, [announceStatus]);
 
   useEffect(() => {
-    fetchCards();
-  }, []);
+    loadCards();
+  }, [loadCards]);
 
   useEffect(() => {
     const target = studyCardWrapperRef.current;
@@ -174,16 +152,19 @@ function App() {
     }
 
     setFormError('');
+    setIsCreating(true);
     try {
-      await axios.post(API_URL, { question: trimmedQuestion, answer: trimmedAnswer });
+      await createCard({ question: trimmedQuestion, answer: trimmedAnswer });
       setQuestion('');
       setAnswer('');
-      announceStatus('Card added successfully.', 'success');
-      fetchCards();
+      announceStatus('Card added successfully.');
+      loadCards();
     } catch (error) {
       console.error('Failed to add card', error);
       setFormError('Unable to add card right now.');
-      announceStatus('Unable to add card right now.', 'error');
+      announceStatus('Unable to add card right now.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -212,28 +193,34 @@ function App() {
     }
 
     setEditError('');
+    setIsUpdating(true);
     try {
-      await axios.put(`${API_URL}/${id}`, { question: trimmedQuestion, answer: trimmedAnswer });
+      await updateCard(id, { question: trimmedQuestion, answer: trimmedAnswer });
       cancelEdit();
-      announceStatus('Card updated successfully.', 'success');
-      fetchCards();
+      announceStatus('Card updated successfully.');
+      loadCards();
     } catch (error) {
       console.error('Failed to update card', error);
       setEditError('Unable to save changes.');
-      announceStatus('Unable to save card changes.', 'error');
+      announceStatus('Unable to save card changes.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   const disappearCard = async (id) => {
+    setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/${id}`);
-      fetchCards();
-      announceStatus('Card deleted.', 'warning');
+      await deleteCard(id);
+      loadCards();
+      announceStatus('Card deleted.');
     } catch (error) {
       console.error('Failed to delete card', error);
-      announceStatus('Unable to delete card right now.', 'error');
+      announceStatus('Unable to delete card right now.');
+    } finally {
+      setDeletingId(null);
+      setPendingDeletionId(null);
     }
-    setPendingDeletionId(null);
   };
 
   const shuffleCards = (list) => {
@@ -252,7 +239,7 @@ function App() {
       setStudyMessage(EMPTY_DECK_MESSAGE);
       setStudyState(STUDY_STATES.empty);
       setIsStudying(false);
-      announceStatus('Add cards in the management zone to start studying.', 'info');
+      announceStatus('Add cards in the management zone to start studying.');
       return;
     }
     const shuffled = shuffleCards(cards);
@@ -262,7 +249,7 @@ function App() {
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
-    announceStatus('Shuffle study started.', 'success');
+    announceStatus('Shuffle study started.');
   };
 
   const handleCardFlip = () => {
@@ -289,7 +276,7 @@ function App() {
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
-    announceStatus('Moved to previous card.', 'info');
+    announceStatus('Moved to previous card.');
   };
 
   const goNext = () => {
@@ -299,14 +286,14 @@ function App() {
       setStudyState(STUDY_STATES.complete);
       setIsStudying(false);
       setIsStudyFlipped(false);
-      announceStatus(COMPLETION_MESSAGE, 'success');
+      announceStatus(COMPLETION_MESSAGE);
       return;
     }
     setCurrentIndex((prev) => prev + 1);
     setIsStudyFlipped(false);
     setStudyMessage('');
     setStudyState(STUDY_STATES.active);
-    announceStatus('Moved to next card.', 'info');
+    announceStatus('Moved to next card.');
   };
 
   const handlePrimaryStudyAction = () => {
@@ -326,16 +313,23 @@ function App() {
   const hasDeck = studyDeck.length > 0;
   const showStudyCard = (studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed) && currentCard;
   const studyLocked = Boolean(editingId);
-  const managementLocked = isStudying;
+  const managementLocked = isStudying || isCreating || isUpdating || Boolean(deletingId);
   const statusInfo = STUDY_STATUS_COPY[studyState] || STUDY_STATUS_COPY[STUDY_STATES.idle];
   const statusLabel = studyLocked ? 'Editing in Progress' : statusInfo.label;
   const statusHint = studyLocked ? 'Finish editing to continue studying.' : statusInfo.hint;
   const canUseStudyNav = !studyLocked && hasDeck && ![STUDY_STATES.empty, STUDY_STATES.complete].includes(studyState);
   const showPrimaryStudyAction = studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed;
   const showPrimaryActionFooter = showPrimaryStudyAction && showStudyCard && !studyLocked;
-  const primaryActionLabel = studyState === STUDY_STATES.revealed ? 'Next Card' : 'Reveal Answer';
   const isDeckEmptyState = studyState === STUDY_STATES.empty;
   const showStudyMessage = studyMessage && !isDeckEmptyState;
+
+  const handleRequestDelete = (id) => {
+    setPendingDeletionId(id);
+  };
+
+  const handleCancelDelete = () => {
+    setPendingDeletionId(null);
+  };
 
   return (
     <div className="App">
@@ -365,6 +359,7 @@ function App() {
             onChange={(e) => setQuestion(e.target.value)}
             required
             disabled={managementLocked}
+            aria-busy={isCreating}
           />
           <input
             placeholder="Provide the answer"
@@ -372,85 +367,38 @@ function App() {
             onChange={(e) => setAnswer(e.target.value)}
             required
             disabled={managementLocked}
+            aria-busy={isCreating}
           />
           <button type="submit" disabled={managementLocked}>
-            Add Card
+            {isCreating ? 'Adding...' : 'Add Card'}
           </button>
         </form>
         {formError && <p className="error-text">{formError}</p>}
 
         <div className="card-list-container">
+          {isFetching && <p className="info-banner">Loading cards...</p>}
           {cards.length === 0 && <p className="empty-state">No cards yet. Start by adding one above.</p>}
-          <ul className="card-list">
-            {cards.map((card) => (
-              <li key={card.id} className="card-row">
-                <div className="card-row-content">
-                  {editingId === card.id ? (
-                    <div className="edit-fields">
-                      <input value={editQ} onChange={(e) => setEditQ(e.target.value)} />
-                      <input value={editA} onChange={(e) => setEditA(e.target.value)} />
-                      {editError && <p className="error-text inline">{editError}</p>}
-                    </div>
-                  ) : (
-                    <>
-                      <p className="card-question">Q: {card.question}</p>
-                      <p className="card-answer">A: {card.answer}</p>
-                    </>
-                  )}
-                </div>
-                <div className="card-row-actions">
-                  {editingId === card.id ? (
-                    <>
-                      <button className="btn save-btn" type="button" onClick={() => saveEdit(card.id)}>
-                        Save
-                      </button>
-                      <button className="btn ghost" type="button" onClick={cancelEdit}>
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="btn edit-btn"
-                        type="button"
-                        onClick={() => startEdit(card)}
-                        disabled={managementLocked}
-                      >
-                        Edit
-                      </button>
-                      {managementLocked ? (
-                        <button className="btn danger" type="button" disabled>
-                          Delete
-                        </button>
-                      ) : pendingDeletionId === card.id ? (
-                        <div className="confirm-inline">
-                          <span>Delete this card?</span>
-                          <button className="btn danger" type="button" onClick={() => disappearCard(card.id)}>
-                            Yes
-                          </button>
-                          <button
-                            className="btn ghost"
-                            type="button"
-                            onClick={() => setPendingDeletionId(null)}
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="btn danger"
-                          type="button"
-                          onClick={() => setPendingDeletionId(card.id)}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <CardList
+            cards={cards}
+            editingId={editingId}
+            editQ={editQ}
+            editA={editA}
+            editError={editError}
+            managementLocked={managementLocked}
+            pendingDeletionId={pendingDeletionId}
+            isUpdating={isUpdating}
+            deletingId={deletingId}
+            onEditChange={(field, value) => {
+              if (field === 'question') setEditQ(value);
+              if (field === 'answer') setEditA(value);
+            }}
+            onStartEdit={startEdit}
+            onCancelEdit={cancelEdit}
+            onSaveEdit={saveEdit}
+            onDelete={disappearCard}
+            onConfirmDelete={handleRequestDelete}
+            onCancelDelete={handleCancelDelete}
+          />
         </div>
 
         <div className="status-bar">
@@ -479,13 +427,11 @@ function App() {
           <span className="deck-size">Cards Ready: {studyDeck.length}</span>
         </div>
 
-        <div className="study-status-bar" role="status" aria-live="polite">
-          <div>
-            <p className="study-status-label">{statusLabel}</p>
-            <p className="study-status-hint">{statusHint}</p>
-          </div>
-          <span className={`study-status-pill status-${studyState}`}>{statusLabel}</span>
-        </div>
+        <StudyStatusBar
+          statusLabel={statusLabel}
+          statusHint={statusHint}
+          studyState={studyState}
+        />
         {studyLocked && (
           <p className="info-banner warning" role="alert">
             Finish editing to interact with the study zone.
@@ -511,73 +457,24 @@ function App() {
               </div>
             )}
 
-            {isDeckEmptyState && (
-              <div className="study-panel empty">
-                <h3>No Cards Available</h3>
-                <p>Add cards in the management zone to start studying.</p>
-                <button className="btn ghost" type="button" onClick={scrollToManagement}>
-                  Go to Management
-                </button>
-              </div>
-            )}
+            {isDeckEmptyState && <StudyEmptyPanel onGoToManagement={scrollToManagement} />}
 
-            {(studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed) && (
-              <div
-                className="study-card-wrapper"
-                onClick={handleCardFlip}
-                onKeyDown={handleCardKeyDown}
-                role="button"
-                tabIndex={studyLocked ? -1 : 0}
-                aria-pressed={isStudyFlipped}
-                aria-label={
-                  isStudyFlipped
-                    ? 'Answer is visible. Press to show the question again.'
-                    : 'Question is visible. Press to reveal the answer.'
-                }
-              >
-                <div
-                  className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
-                  style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
-                >
-                  <div className="study-face study-front">
-                    {showStudyCard ? (
-                      <>
-                        <span className="card-label">Question</span>
-                        <p>{currentCard.question}</p>
-                        <small>Tap or use the button below to reveal the answer</small>
-                      </>
-                    ) : (
-                      <p className="empty-state">Shuffle to load the study deck.</p>
-                    )}
-                  </div>
-                  <div className="study-face study-back">
-                    {showStudyCard ? (
-                      <>
-                        <span className="card-label">Answer</span>
-                        <p>{currentCard.answer}</p>
-                        <small>Click to flip back</small>
-                      </>
-                    ) : (
-                      <p className="empty-state">Waiting for cards ...</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+            <StudyCard
+              showStudyCard={showStudyCard}
+              studyState={studyState}
+              isStudyFlipped={isStudyFlipped}
+              cardSize={cardSize}
+              currentCard={currentCard}
+              onFlip={handleCardFlip}
+              onKeyFlip={handleCardKeyDown}
+              studyLocked={studyLocked}
+            />
 
             {studyState === STUDY_STATES.complete && (
-              <div className="study-panel complete">
-                <h3>{COMPLETION_MESSAGE}</h3>
-                <p>Shuffle again or jump back to the management zone.</p>
-                <div className="panel-actions">
-                  <button className="btn shuffle" type="button" onClick={startShuffleStudy}>
-                    Restart Shuffle Study
-                  </button>
-                  <button className="btn ghost" type="button" onClick={scrollToManagement}>
-                    Go to Management
-                  </button>
-                </div>
-              </div>
+              <StudyCompletePanel
+                onRestart={startShuffleStudy}
+                onGoToManagement={scrollToManagement}
+              />
             )}
 
           </div>
@@ -614,17 +511,11 @@ function App() {
           </button>
         </div>
 
-        {showPrimaryActionFooter && (
-          <div className="study-primary-actions">
-            <button
-              className={`study-primary-btn ${studyState === STUDY_STATES.revealed ? 'next' : ''}`}
-              type="button"
-              onClick={handlePrimaryStudyAction}
-            >
-              {primaryActionLabel}
-            </button>
-          </div>
-        )}
+        <StudyPrimaryAction
+          show={showPrimaryActionFooter}
+          studyState={studyState}
+          onPrimaryAction={handlePrimaryStudyAction}
+        />
 
         <div className="study-meta">
           {showStudyMessage && <p className="status-message">{studyMessage}</p>}
