@@ -1,0 +1,3 @@
+export const CARD_BASE_WIDTH = 320;
+export const CARD_BASE_HEIGHT = 220;
+export const CARD_ASPECT_RATIO = CARD_BASE_HEIGHT / CARD_BASE_WIDTH;
