@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -48,7 +49,11 @@ async def get_cards():
 async def create_card(card: Flashcard):
     payload = _sanitize_payload(card)
     new_card = await collection.insert_one(payload)
-    return {"id": str(new_card.inserted_id), **payload}
+    return {
+        "id": str(new_card.inserted_id),
+        "question": payload["question"],
+        "answer": payload["answer"],
+    }
 
 @app.put("/cards/{card_id}")
 async def update_card(card_id: str, card: Flashcard):
