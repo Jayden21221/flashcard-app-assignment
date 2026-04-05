@@ -10,7 +10,32 @@ const CARD_ASPECT_RATIO = CARD_BASE_HEIGHT / CARD_BASE_WIDTH;
 const STUDY_STATES = {
   idle: 'idle',
   active: 'active',
+  revealed: 'revealed',
   complete: 'complete',
+  empty: 'empty',
+};
+
+const STUDY_STATUS_COPY = {
+  [STUDY_STATES.idle]: {
+    label: 'Idle',
+    hint: 'Shuffle the deck to begin studying.',
+  },
+  [STUDY_STATES.active]: {
+    label: 'Studying',
+    hint: 'Review the question and reveal the answer when you are ready.',
+  },
+  [STUDY_STATES.revealed]: {
+    label: 'Answer Revealed',
+    hint: 'Advance to the next card once you feel confident.',
+  },
+  [STUDY_STATES.complete]: {
+    label: 'Study Complete',
+    hint: 'Great job! Shuffle again or adjust your deck.',
+  },
+  [STUDY_STATES.empty]: {
+    label: 'No Cards',
+    hint: 'Add cards in the management zone to get started.',
+  },
 };
 
 function App() {
@@ -31,6 +56,19 @@ function App() {
   const [editError, setEditError] = useState('');
   const [pendingDeletionId, setPendingDeletionId] = useState(null);
   const [studyState, setStudyState] = useState(STUDY_STATES.idle);
+
+  useEffect(() => {
+    if (isStudying) {
+      setPendingDeletionId(null);
+    }
+  }, [isStudying]);
+
+  const scrollToManagement = () => {
+    const section = document.getElementById('management-zone');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const API_URL = 'http://127.0.0.1:8000/cards';
 
@@ -81,14 +119,20 @@ function App() {
       setStudyDeck([]);
       setCurrentIndex(0);
       setIsStudying(false);
-      setStudyState(STUDY_STATES.idle);
+      setIsStudyFlipped(false);
+      setStudyState(STUDY_STATES.empty);
+      setStudyMessage(EMPTY_DECK_MESSAGE);
       return;
     }
 
     if (!isStudying) {
       setStudyDeck(cards);
       setCurrentIndex(0);
-      setStudyState(STUDY_STATES.idle);
+      setIsStudyFlipped(false);
+      if (studyState !== STUDY_STATES.complete) {
+        setStudyState(STUDY_STATES.idle);
+        setStudyMessage('');
+      }
       return;
     }
 
@@ -103,9 +147,15 @@ function App() {
         if (!updated.length) return 0;
         return Math.min(prevIndex, updated.length - 1);
       });
+      if (!updated.length) {
+        setIsStudying(false);
+        setIsStudyFlipped(false);
+        setStudyState(STUDY_STATES.empty);
+        setStudyMessage(EMPTY_DECK_MESSAGE);
+      }
       return updated;
     });
-  }, [cards, isStudying]);
+  }, [cards, isStudying, studyState]);
 
   const addCard = async (e) => {
     e.preventDefault();
@@ -171,10 +221,12 @@ function App() {
   };
 
   const startShuffleStudy = () => {
+    if (editingId) return;
     if (!cards.length) {
       setStudyDeck([]);
       setStudyMessage(EMPTY_DECK_MESSAGE);
-      setStudyState(STUDY_STATES.idle);
+      setStudyState(STUDY_STATES.empty);
+      setIsStudying(false);
       return;
     }
     const shuffled = shuffleCards(cards);
@@ -186,12 +238,18 @@ function App() {
     setStudyState(STUDY_STATES.active);
   };
 
-  const toggleStudyFlip = () => {
-    if (!studyDeck.length) return;
-    setIsStudyFlipped((prev) => !prev);
+  const handleCardFlip = () => {
+    if (!studyDeck.length || !studyDeck[currentIndex]) return;
+    if (editingId || studyState === STUDY_STATES.empty || studyState === STUDY_STATES.complete) return;
+    setIsStudyFlipped((prev) => {
+      const next = !prev;
+      setStudyState(next ? STUDY_STATES.revealed : STUDY_STATES.active);
+      return next;
+    });
   };
 
   const goPrev = () => {
+    if (!canUseStudyNav) return;
     if (currentIndex === 0) return;
     setCurrentIndex((prev) => prev - 1);
     setIsStudyFlipped(false);
@@ -200,10 +258,12 @@ function App() {
   };
 
   const goNext = () => {
-    if (!studyDeck.length) return;
+    if (!canUseStudyNav) return;
     if (currentIndex === studyDeck.length - 1) {
       setStudyMessage(COMPLETION_MESSAGE);
       setStudyState(STUDY_STATES.complete);
+      setIsStudying(false);
+      setIsStudyFlipped(false);
       return;
     }
     setCurrentIndex((prev) => prev + 1);
@@ -212,11 +272,33 @@ function App() {
     setStudyState(STUDY_STATES.active);
   };
 
+  const handlePrimaryStudyAction = () => {
+    if (editingId || !showStudyCard) return;
+    if (studyState === STUDY_STATES.active) {
+      setIsStudyFlipped(true);
+      setStudyState(STUDY_STATES.revealed);
+      return;
+    }
+    if (studyState === STUDY_STATES.revealed) {
+      goNext();
+    }
+  };
+
   const currentCard = studyDeck[currentIndex];
   const isFirstCard = currentIndex === 0;
   const hasDeck = studyDeck.length > 0;
-  const isEmptyDeckMessage = studyMessage === EMPTY_DECK_MESSAGE;
-  const showStudyCard = studyState === STUDY_STATES.active && currentCard;
+  const showStudyCard = (studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed) && currentCard;
+  const studyLocked = Boolean(editingId);
+  const managementLocked = isStudying;
+  const statusInfo = STUDY_STATUS_COPY[studyState] || STUDY_STATUS_COPY[STUDY_STATES.idle];
+  const statusLabel = studyLocked ? 'Editing in Progress' : statusInfo.label;
+  const statusHint = studyLocked ? 'Finish editing to continue studying.' : statusInfo.hint;
+  const canUseStudyNav = !studyLocked && hasDeck && ![STUDY_STATES.empty, STUDY_STATES.complete].includes(studyState);
+  const showPrimaryStudyAction = studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed;
+  const showPrimaryActionFooter = showPrimaryStudyAction && showStudyCard && !studyLocked;
+  const primaryActionLabel = studyState === STUDY_STATES.revealed ? 'Next Card' : 'Reveal Answer';
+  const isDeckEmptyState = studyState === STUDY_STATES.empty;
+  const showStudyMessage = studyMessage && !isDeckEmptyState;
 
   return (
     <div className="App">
@@ -225,11 +307,16 @@ function App() {
         <p>Manage every card in the top panel and deep dive into shuffle study mode below.</p>
       </header>
 
-      <section className="management-zone">
+      <section className="management-zone" id="management-zone">
         <div className="zone-title">
           <h2>Management Zone</h2>
           <p>Build, edit, or remove cards before sending them to study.</p>
         </div>
+        {managementLocked && (
+          <p className="info-banner warning">
+            Studying is active. Stop studying or finish the current session to edit or delete cards.
+          </p>
+        )}
 
         <form className="card-form" onSubmit={addCard}>
           <input
@@ -279,10 +366,19 @@ function App() {
                     </>
                   ) : (
                     <>
-                      <button className="btn edit-btn" type="button" onClick={() => startEdit(card)}>
+                      <button
+                        className="btn edit-btn"
+                        type="button"
+                        onClick={() => startEdit(card)}
+                        disabled={managementLocked}
+                      >
                         Edit
                       </button>
-                      {pendingDeletionId === card.id ? (
+                      {managementLocked ? (
+                        <button className="btn danger" type="button" disabled>
+                          Delete
+                        </button>
+                      ) : pendingDeletionId === card.id ? (
                         <div className="confirm-inline">
                           <span>Delete this card?</span>
                           <button className="btn danger" type="button" onClick={() => disappearCard(card.id)}>
@@ -326,18 +422,35 @@ function App() {
         </div>
 
         <div className="study-controls">
-          <button className="btn shuffle" onClick={startShuffleStudy} type="button">
+          <button
+            className="btn shuffle"
+            onClick={startShuffleStudy}
+            type="button"
+            disabled={studyLocked || !cards.length}
+            title={!cards.length ? 'Add cards to begin studying.' : studyLocked ? 'Finish editing to start.' : undefined}
+          >
             Start Shuffle Study
           </button>
           <span className="deck-size">Cards Ready: {studyDeck.length}</span>
         </div>
+
+        <div className="study-status-bar">
+          <div>
+            <p className="study-status-label">{statusLabel}</p>
+            <p className="study-status-hint">{statusHint}</p>
+          </div>
+          <span className={`study-status-pill status-${studyState}`}>{studyState}</span>
+        </div>
+        {studyLocked && (
+          <p className="info-banner warning">Finish editing to interact with the study zone.</p>
+        )}
 
         <div className="study-area">
           <button
             className="nav-btn nav-btn-desktop"
             onClick={goPrev}
             type="button"
-            disabled={!hasDeck || isFirstCard || studyState !== STUDY_STATES.active}
+            disabled={!canUseStudyNav || isFirstCard}
           >
             &#8249;
           </button>
@@ -346,12 +459,22 @@ function App() {
             {studyState === STUDY_STATES.idle && (
               <div className="study-panel">
                 <h3>Shuffle Study Ready</h3>
-                <p>{studyMessage || 'Press the shuffle button to randomize your deck and begin.'}</p>
+                <p>Press the shuffle button to randomize your deck and begin.</p>
               </div>
             )}
 
-            {studyState === STUDY_STATES.active && (
-              <div className="study-card-wrapper" onClick={toggleStudyFlip}>
+            {isDeckEmptyState && (
+              <div className="study-panel empty">
+                <h3>No Cards Available</h3>
+                <p>Add cards in the management zone to start studying.</p>
+                <button className="btn ghost" type="button" onClick={scrollToManagement}>
+                  Go to Management
+                </button>
+              </div>
+            )}
+
+            {(studyState === STUDY_STATES.active || studyState === STUDY_STATES.revealed) && (
+              <div className="study-card-wrapper" onClick={handleCardFlip}>
                 <div
                   className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
                   style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
@@ -361,7 +484,7 @@ function App() {
                       <>
                         <span className="card-label">Question</span>
                         <p>{currentCard.question}</p>
-                        <small>Click to reveal the answer</small>
+                        <small>Tap or use the button below to reveal the answer</small>
                       </>
                     ) : (
                       <p className="empty-state">Shuffle to load the study deck.</p>
@@ -385,19 +508,25 @@ function App() {
             {studyState === STUDY_STATES.complete && (
               <div className="study-panel complete">
                 <h3>{COMPLETION_MESSAGE}</h3>
-                <p>Shuffle again or review cards from the list above.</p>
-                <button className="btn shuffle" type="button" onClick={startShuffleStudy}>
-                  Restart Shuffle Study
-                </button>
+                <p>Shuffle again or jump back to the management zone.</p>
+                <div className="panel-actions">
+                  <button className="btn shuffle" type="button" onClick={startShuffleStudy}>
+                    Restart Shuffle Study
+                  </button>
+                  <button className="btn ghost" type="button" onClick={scrollToManagement}>
+                    Go to Management
+                  </button>
+                </div>
               </div>
             )}
+
           </div>
 
           <button
-            className="nav-btn nav-btn-desktop"
+            className={`nav-btn nav-btn-desktop ${studyState === STUDY_STATES.revealed ? 'highlight' : ''}`}
             onClick={goNext}
             type="button"
-            disabled={!hasDeck || studyState !== STUDY_STATES.active}
+            disabled={!canUseStudyNav}
           >
             &#8250;
           </button>
@@ -408,24 +537,34 @@ function App() {
             className="nav-btn mobile-nav-btn"
             onClick={goPrev}
             type="button"
-            disabled={!hasDeck || isFirstCard || studyState !== STUDY_STATES.active}
+            disabled={!canUseStudyNav || isFirstCard}
           >
             &#8249;
           </button>
           <button
-            className="nav-btn mobile-nav-btn"
+            className={`nav-btn mobile-nav-btn ${studyState === STUDY_STATES.revealed ? 'highlight' : ''}`}
             onClick={goNext}
             type="button"
-            disabled={!hasDeck || studyState !== STUDY_STATES.active}
+            disabled={!canUseStudyNav}
           >
             &#8250;
           </button>
         </div>
 
+        {showPrimaryActionFooter && (
+          <div className="study-primary-actions">
+            <button
+              className={`study-primary-btn ${studyState === STUDY_STATES.revealed ? 'next' : ''}`}
+              type="button"
+              onClick={handlePrimaryStudyAction}
+            >
+              {primaryActionLabel}
+            </button>
+          </div>
+        )}
+
         <div className="study-meta">
-          {studyMessage && !isEmptyDeckMessage && (
-            <p className="status-message">{studyMessage}</p>
-          )}
+          {showStudyMessage && <p className="status-message">{studyMessage}</p>}
         </div>
       </section>
 
