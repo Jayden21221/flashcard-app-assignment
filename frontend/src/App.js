@@ -7,6 +7,11 @@ const COMPLETION_MESSAGE = "Great job! You've finished all cards.";
 const CARD_BASE_WIDTH = 320;
 const CARD_BASE_HEIGHT = 220;
 const CARD_ASPECT_RATIO = CARD_BASE_HEIGHT / CARD_BASE_WIDTH;
+const STUDY_STATES = {
+  idle: 'idle',
+  active: 'active',
+  complete: 'complete',
+};
 
 function App() {
   const [cards, setCards] = useState([]);
@@ -22,6 +27,10 @@ function App() {
   const [studyMessage, setStudyMessage] = useState('');
   const [cardSize, setCardSize] = useState({ width: CARD_BASE_WIDTH, height: CARD_BASE_HEIGHT });
   const studyCardWrapperRef = useRef(null);
+  const [formError, setFormError] = useState('');
+  const [editError, setEditError] = useState('');
+  const [pendingDeletionId, setPendingDeletionId] = useState(null);
+  const [studyState, setStudyState] = useState(STUDY_STATES.idle);
 
   const API_URL = 'http://127.0.0.1:8000/cards';
 
@@ -72,12 +81,14 @@ function App() {
       setStudyDeck([]);
       setCurrentIndex(0);
       setIsStudying(false);
+      setStudyState(STUDY_STATES.idle);
       return;
     }
 
     if (!isStudying) {
       setStudyDeck(cards);
       setCurrentIndex(0);
+      setStudyState(STUDY_STATES.idle);
       return;
     }
 
@@ -103,12 +114,11 @@ function App() {
     if (!trimmedQuestion || !trimmedAnswer) {
       setQuestion(trimmedQuestion);
       setAnswer(trimmedAnswer);
-      if (typeof window !== 'undefined') {
-        window.alert('Please provide both a question and answer.');
-      }
+      setFormError('Both fields are required.');
       return;
     }
 
+    setFormError('');
     await axios.post(API_URL, { question: trimmedQuestion, answer: trimmedAnswer });
     setQuestion('');
     setAnswer('');
@@ -119,12 +129,14 @@ function App() {
     setEditingId(card.id);
     setEditQ(card.question);
     setEditA(card.answer);
+    setEditError('');
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditQ('');
     setEditA('');
+    setEditError('');
   };
 
   const saveEdit = async (id) => {
@@ -133,22 +145,20 @@ function App() {
     if (!trimmedQuestion || !trimmedAnswer) {
       setEditQ(trimmedQuestion);
       setEditA(trimmedAnswer);
-      if (typeof window !== 'undefined') {
-        window.alert('Please provide both a question and answer.');
-      }
+      setEditError('Both fields are required.');
       return;
     }
 
+    setEditError('');
     await axios.put(`${API_URL}/${id}`, { question: trimmedQuestion, answer: trimmedAnswer });
     cancelEdit();
     fetchCards();
   };
 
   const disappearCard = async (id) => {
-    if (window.confirm('Do you want to delete this card?')) {
-      await axios.delete(`${API_URL}/${id}`);
-      fetchCards();
-    }
+    await axios.delete(`${API_URL}/${id}`);
+    fetchCards();
+    setPendingDeletionId(null);
   };
 
   const shuffleCards = (list) => {
@@ -164,6 +174,7 @@ function App() {
     if (!cards.length) {
       setStudyDeck([]);
       setStudyMessage(EMPTY_DECK_MESSAGE);
+      setStudyState(STUDY_STATES.idle);
       return;
     }
     const shuffled = shuffleCards(cards);
@@ -172,6 +183,7 @@ function App() {
     setIsStudying(true);
     setIsStudyFlipped(false);
     setStudyMessage('');
+    setStudyState(STUDY_STATES.active);
   };
 
   const toggleStudyFlip = () => {
@@ -184,26 +196,27 @@ function App() {
     setCurrentIndex((prev) => prev - 1);
     setIsStudyFlipped(false);
     setStudyMessage('');
+    setStudyState(STUDY_STATES.active);
   };
 
   const goNext = () => {
     if (!studyDeck.length) return;
     if (currentIndex === studyDeck.length - 1) {
-      setStudyMessage('');
-      if (typeof window !== 'undefined') {
-        window.alert(COMPLETION_MESSAGE);
-      }
+      setStudyMessage(COMPLETION_MESSAGE);
+      setStudyState(STUDY_STATES.complete);
       return;
     }
     setCurrentIndex((prev) => prev + 1);
     setIsStudyFlipped(false);
     setStudyMessage('');
+    setStudyState(STUDY_STATES.active);
   };
 
   const currentCard = studyDeck[currentIndex];
   const isFirstCard = currentIndex === 0;
   const hasDeck = studyDeck.length > 0;
   const isEmptyDeckMessage = studyMessage === EMPTY_DECK_MESSAGE;
+  const showStudyCard = studyState === STUDY_STATES.active && currentCard;
 
   return (
     <div className="App">
@@ -233,6 +246,7 @@ function App() {
           />
           <button type="submit">Add Card</button>
         </form>
+        {formError && <p className="error-text">{formError}</p>}
 
         <div className="card-list-container">
           {cards.length === 0 && <p className="empty-state">No cards yet. Start by adding one above.</p>}
@@ -244,6 +258,7 @@ function App() {
                     <div className="edit-fields">
                       <input value={editQ} onChange={(e) => setEditQ(e.target.value)} />
                       <input value={editA} onChange={(e) => setEditA(e.target.value)} />
+                      {editError && <p className="error-text inline">{editError}</p>}
                     </div>
                   ) : (
                     <>
@@ -267,9 +282,29 @@ function App() {
                       <button className="btn edit-btn" type="button" onClick={() => startEdit(card)}>
                         Edit
                       </button>
-                      <button className="btn danger" type="button" onClick={() => disappearCard(card.id)}>
-                        Delete
-                      </button>
+                      {pendingDeletionId === card.id ? (
+                        <div className="confirm-inline">
+                          <span>Delete this card?</span>
+                          <button className="btn danger" type="button" onClick={() => disappearCard(card.id)}>
+                            Yes
+                          </button>
+                          <button
+                            className="btn ghost"
+                            type="button"
+                            onClick={() => setPendingDeletionId(null)}
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn danger"
+                          type="button"
+                          onClick={() => setPendingDeletionId(card.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -302,54 +337,67 @@ function App() {
             className="nav-btn nav-btn-desktop"
             onClick={goPrev}
             type="button"
-            disabled={!hasDeck || isFirstCard}
+            disabled={!hasDeck || isFirstCard || studyState !== STUDY_STATES.active}
           >
             &#8249;
           </button>
 
-          <div
-            className="study-card-wrapper"
-            onClick={toggleStudyFlip}
-            ref={studyCardWrapperRef}
-          >
-            <div
-              className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
-              style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
-            >
-              <div className="study-face study-front">
-                {currentCard ? (
-                  <>
-                    <span className="card-label">Question</span>
-                    <p>{currentCard.question}</p>
-                    <small>Click to reveal the answer</small>
-                  </>
-                ) : (
-                  <p className="empty-state">
-                    {isEmptyDeckMessage ? studyMessage : 'Shuffle to load the study deck.'}
-                  </p>
-                )}
+          <div className="study-content" ref={studyCardWrapperRef}>
+            {studyState === STUDY_STATES.idle && (
+              <div className="study-panel">
+                <h3>Shuffle Study Ready</h3>
+                <p>{studyMessage || 'Press the shuffle button to randomize your deck and begin.'}</p>
               </div>
-              <div className="study-face study-back">
-                {currentCard ? (
-                  <>
-                    <span className="card-label">Answer</span>
-                    <p>{currentCard.answer}</p>
-                    <small>Click to flip back</small>
-                  </>
-                ) : (
-                  <p className="empty-state">
-                    {isEmptyDeckMessage ? studyMessage : 'Waiting for cards ...'}
-                  </p>
-                )}
+            )}
+
+            {studyState === STUDY_STATES.active && (
+              <div className="study-card-wrapper" onClick={toggleStudyFlip}>
+                <div
+                  className={`study-card ${isStudyFlipped ? 'is-flipped' : ''}`}
+                  style={{ width: `${cardSize.width}px`, height: `${cardSize.height}px` }}
+                >
+                  <div className="study-face study-front">
+                    {showStudyCard ? (
+                      <>
+                        <span className="card-label">Question</span>
+                        <p>{currentCard.question}</p>
+                        <small>Click to reveal the answer</small>
+                      </>
+                    ) : (
+                      <p className="empty-state">Shuffle to load the study deck.</p>
+                    )}
+                  </div>
+                  <div className="study-face study-back">
+                    {showStudyCard ? (
+                      <>
+                        <span className="card-label">Answer</span>
+                        <p>{currentCard.answer}</p>
+                        <small>Click to flip back</small>
+                      </>
+                    ) : (
+                      <p className="empty-state">Waiting for cards ...</p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {studyState === STUDY_STATES.complete && (
+              <div className="study-panel complete">
+                <h3>{COMPLETION_MESSAGE}</h3>
+                <p>Shuffle again or review cards from the list above.</p>
+                <button className="btn shuffle" type="button" onClick={startShuffleStudy}>
+                  Restart Shuffle Study
+                </button>
+              </div>
+            )}
           </div>
 
           <button
             className="nav-btn nav-btn-desktop"
             onClick={goNext}
             type="button"
-            disabled={!hasDeck}
+            disabled={!hasDeck || studyState !== STUDY_STATES.active}
           >
             &#8250;
           </button>
@@ -360,7 +408,7 @@ function App() {
             className="nav-btn mobile-nav-btn"
             onClick={goPrev}
             type="button"
-            disabled={!hasDeck || isFirstCard}
+            disabled={!hasDeck || isFirstCard || studyState !== STUDY_STATES.active}
           >
             &#8249;
           </button>
@@ -368,7 +416,7 @@ function App() {
             className="nav-btn mobile-nav-btn"
             onClick={goNext}
             type="button"
-            disabled={!hasDeck}
+            disabled={!hasDeck || studyState !== STUDY_STATES.active}
           >
             &#8250;
           </button>
