@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from bson.errors import InvalidId
 
 app = FastAPI()
 
@@ -21,6 +22,21 @@ class Flashcard(BaseModel):
     question: str
     answer: str
 
+
+def _sanitize_payload(card: Flashcard) -> dict:
+    question = card.question.strip()
+    answer = card.answer.strip()
+    if not question or not answer:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question and answer cannot be empty.")
+    return {"question": question, "answer": answer}
+
+
+def _parse_object_id(card_id: str) -> ObjectId:
+    try:
+        return ObjectId(card_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid card id format.")
+
 @app.get("/cards")
 async def get_cards():
     cards = []
@@ -30,22 +46,26 @@ async def get_cards():
 
 @app.post("/cards")
 async def create_card(card: Flashcard):
-    new_card = await collection.insert_one(card.dict())
-    return {"id": str(new_card.inserted_id), **card.dict()}
+    payload = _sanitize_payload(card)
+    new_card = await collection.insert_one(payload)
+    return {"id": str(new_card.inserted_id), **payload}
 
 @app.put("/cards/{card_id}")
 async def update_card(card_id: str, card: Flashcard):
-    result = await collection.update_one({"_id": ObjectId(card_id)}, {"$set": card.dict()})
-    if result.modified_count == 1:
-        return {"message": "Success"}
-    raise HTTPException(status_code=404, detail="Not found")
+    payload = _sanitize_payload(card)
+    object_id = _parse_object_id(card_id)
+    result = await collection.update_one({"_id": object_id}, {"$set": payload})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found.")
+    return {"message": "Success"}
 
 @app.delete("/cards/{card_id}")
 async def delete_card(card_id: str):
-    result = await collection.delete_one({"_id": ObjectId(card_id)})
+    object_id = _parse_object_id(card_id)
+    result = await collection.delete_one({"_id": object_id})
     if result.deleted_count == 1:
         return {"message": "Success"}
-    raise HTTPException(status_code=404, detail="Not found")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found.")
 
 @app.get("/")
 def home():
