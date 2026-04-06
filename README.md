@@ -8,7 +8,15 @@ This project is a single-page application (SPA) that lets learners create, manag
 ---
 
 ## 2. Screenshots / Preview
-_(Add management, study, and completion screenshots here.)_
+
+### Management Zone
+![Management](./screenshots/management.png)
+
+### Study Mode
+![Study](./screenshots/study-active.png)
+
+### Completion State
+![Complete](./screenshots/complete.png)
 
 ---
 
