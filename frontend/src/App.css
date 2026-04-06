@@ -99,10 +99,24 @@
 
 .card-form input:focus-visible,
 .btn:focus-visible,
-.study-card-wrapper:focus-visible,
 .nav-btn:focus-visible {
   outline: 3px solid #22d3ee;
   outline-offset: 2px;
+}
+
+.study-card-wrapper:focus-visible {
+  outline: none;
+}
+
+.study-card-wrapper:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: -40px -30px;
+  border: 4px solid #bae6fd;
+  border-radius: 28px;
+  pointer-events: none;
+  transform: translate(24px, 24px);
+  transition: transform 0.2s ease;
 }
 
 .card-list-container {
@@ -422,6 +436,7 @@
   align-items: center;
   justify-content: center;
   filter: drop-shadow(0 20px 60px rgba(15, 23, 42, 0.25));
+  position: relative;
 }
 
 .study-mobile-nav {
