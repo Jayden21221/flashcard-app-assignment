@@ -1,0 +1,27 @@
+[
+    {
+        "_id":{"$oid":"69d30d358fa2d53549f50d7a"},
+        "question":"What is 2 + 2",
+        "answer":"4"
+    },
+    {
+        "_id":{"$oid":"69d30d408fa2d53549f50d7b"},
+        "question":"Capital of Australia?",
+        "answer":"Canberra"
+    },
+    {
+        "_id":{"$oid":"69d30d4d8fa2d53549f50d7c"},
+        "question":"What does HTML stand for?",
+        "answer":"HyperText Markup Language"
+    },
+    {
+        "_id":{"$oid":"69d30d598fa2d53549f50d7d"},
+        "question":"Define SPA",
+        "answer":"Single Page Application"
+    },
+    {
+        "_id":{"$oid":"69d30d668fa2d53549f50d7e"},
+        "question":"What is MongoDB?",
+        "answer":"A NoSQL database"
+    }
+]
