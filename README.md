@@ -55,11 +55,16 @@ This project is a single-page application (SPA) that lets learners create, manag
 flashcard-app/
 ├── README.md
 ├── backend/
-│   └── main.py          # FastAPI server with CRUD + Mongo integration
+│   ├── main.py            # FastAPI server with CRUD + Mongo integration
+│   └── sample-data/
+│       └── cards.json     # Seed data for quick testing
 └── frontend/
     └── src/
-        ├── App.js       # Main React logic (state, UI, study flow)
-        └── App.css      # Styling, layout, responsive rules
+        ├── App.js         # Main React logic (state machine, orchestration)
+        ├── App.css        # Styling, layout, responsive rules
+        ├── components/    # CardList, StudyCard, StudyControls...
+        ├── constants/     # study.js, layout.js
+        └── services/      # cards.js (API helpers)
 ```
 
 ---
@@ -78,9 +83,10 @@ flashcard-app/
 ### Backend
 ```bash
 cd backend
-pip install -r requirements.txt  # or: pip install fastapi uvicorn motor pymongo
+pip install fastapi uvicorn motor pymongo
 python3 -m uvicorn main:app --reload
 ```
+> The backend currently allows all origins (`allow_origins=["*"]`) for local development and testing purposes.
 
 ### Frontend
 ```bash
@@ -94,7 +100,20 @@ npm start
 ## 9. Database / Sample Data
 - MongoDB database: `flashcard_db`
 - Collection: `cards`
-- You can insert sample docs via `mongosh` or `mongoimport`.
+- Sample data file: `backend/sample-data/cards.json`
+- Import command:
+  ```bash
+  mongoimport --db flashcard_db --collection cards --file backend/sample-data/cards.json --jsonArray
+  ```
+- Export commands:
+  ```bash
+  # JSON export (recommended for assignment turn-in)
+  mongoexport --db flashcard_db --collection cards --out backend/sample-data/cards.json --jsonArray
+
+  # BSON dump (optional backup)
+  mongodump --db flashcard_db --collection cards --out backups/
+  ```
+- With the sample import above you can start testing immediately (the API returns three starter cards).
 
 ---
 
@@ -127,6 +146,5 @@ npm start
 ## 13. Files Included
 - React source code (`frontend/src`)
 - FastAPI backend (`backend/main.py`)
+- Sample database JSON (`backend/sample-data/cards.json`)
 - This README
-
-(Provide MongoDB dump or sample JSON if needed.)

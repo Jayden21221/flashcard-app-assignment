@@ -64,10 +64,12 @@ function App() {
     }
   }, [announceStatus]);
 
+  // Initial load of all cards from the backend.
   useEffect(() => {
     loadCards();
   }, [loadCards]);
 
+  // ResizeObserver keeps the study card dimensions stable across breakpoints.
   useEffect(() => {
     const target = studyCardWrapperRef.current;
     if (!target) {
@@ -97,6 +99,7 @@ function App() {
     return undefined;
   }, []);
 
+  // Keep the study deck synced with the latest cards in storage.
   useEffect(() => {
     if (!cards.length) {
       setStudyDeck([]);
@@ -232,6 +235,7 @@ function App() {
     return shuffled;
   };
 
+  // Shuffle the current deck and enter study mode.
   const startShuffleStudy = () => {
     if (editingId) return;
     if (!cards.length) {
@@ -252,6 +256,7 @@ function App() {
     announceStatus('Shuffle study started.');
   };
 
+  // Flip the study card; used by click and keyboard handlers.
   const handleCardFlip = () => {
     if (!studyDeck.length || !studyDeck[currentIndex]) return;
     if (editingId || studyState === STUDY_STATES.empty || studyState === STUDY_STATES.complete) return;
@@ -269,6 +274,7 @@ function App() {
     }
   };
 
+  // Navigate to the previous card.
   const goPrev = () => {
     if (!canUseStudyNav) return;
     if (currentIndex === 0) return;
@@ -279,6 +285,7 @@ function App() {
     announceStatus('Moved to previous card.');
   };
 
+  // Navigate to the next card or mark completion when at the end.
   const goNext = () => {
     if (!canUseStudyNav) return;
     if (currentIndex === studyDeck.length - 1) {
@@ -353,7 +360,11 @@ function App() {
         )}
 
         <form className="card-form" onSubmit={addCard}>
+          <label className="sr-only" htmlFor="question-input">
+            Question
+          </label>
           <input
+            id="question-input"
             placeholder="Type a question"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -361,7 +372,11 @@ function App() {
             disabled={managementLocked}
             aria-busy={isCreating}
           />
+          <label className="sr-only" htmlFor="answer-input">
+            Answer
+          </label>
           <input
+            id="answer-input"
             placeholder="Provide the answer"
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
